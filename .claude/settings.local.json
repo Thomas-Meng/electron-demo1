@@ -1,0 +1,23 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm install *)",
+      "Bash(npm run *)",
+      "Bash(timeout 10)",
+      "Bash(curl -s http://localhost:5173)",
+      "Bash(python3 *)",
+      "Bash(npx electron-builder *)",
+      "Bash(gh release *)",
+      "Bash(powershell -ExecutionPolicy Bypass -File upload-latest-yml.ps1)",
+      "WebFetch(domain:github.com)",
+      "Bash(curl -s \"https://api.github.com/repos/Thomas-Meng/electron-demo1/releases\")",
+      "Bash(tee release-log.txt)",
+      "Bash(git init *)",
+      "Bash(git add *)",
+      "Bash(git commit *)",
+      "Bash(git remote *)",
+      "Bash(git push *)",
+      "Bash(ping *)"
+    ]
+  }
+}
