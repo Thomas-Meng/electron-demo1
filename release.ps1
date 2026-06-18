@@ -32,7 +32,7 @@ $Headers = @{
     "Accept" = "application/vnd.github.v3+json"
 }
 
-# 清理指定版本的 Release 和 Tag
+# 清理指定版本的 Release
 function Cleanup-Release($tag) {
     Write-Host "清理 $tag 的旧 Release..." -ForegroundColor Yellow
     try {
@@ -45,74 +45,103 @@ function Cleanup-Release($tag) {
     } catch {}
 }
 
-# 升版本号
-Write-Host "升级版本号 ($Version)..." -ForegroundColor Cyan
+# 上传单个文件到 Release（带重试）
+function Upload-Asset($releaseId, $filePath, $fileName) {
+    $maxRetry = 3
+    for ($i = 1; $i -le $maxRetry; $i++) {
+        Write-Host "  上传 $fileName（第 $i 次）..." -ForegroundColor Gray
+        try {
+            $result = Invoke-RestMethod -Uri "https://uploads.github.com/repos/$Owner/$Repo/releases/$releaseId/assets?name=$fileName" `
+                -Method Post `
+                -Headers @{"Authorization" = "token $env:GH_TOKEN"; "Content-Type" = "application/octet-stream"} `
+                -InFile $filePath
+            if ($result.name -eq $fileName) {
+                Write-Host "  $fileName 上传成功" -ForegroundColor Green
+                return $true
+            }
+        } catch {
+            Write-Host "  上传失败: $($_.Exception.Message)" -ForegroundColor Red
+        }
+        if ($i -lt $maxRetry) { Start-Sleep -Seconds 3 }
+    }
+    return $false
+}
+
+# ============ 开始 ============
+
+# 1. 升版本号
+Write-Host "1/5 升级版本号 ($Version)..." -ForegroundColor Cyan
 npm version $Version
 if ($LASTEXITCODE -ne 0) {
-    Write-Host "失败: 升级版本号出错（请先提交未保存的修改）" -ForegroundColor Red
+    Write-Host "失败: 请先提交未保存的修改" -ForegroundColor Red
     exit 1
 }
 
 $NewVersion = (Get-Content "package.json" | ConvertFrom-Json).version
 $Tag = "v$NewVersion"
-Write-Host "版本: $Tag" -ForegroundColor Yellow
+Write-Host "  版本: $Tag" -ForegroundColor Yellow
 
-# 推送
-Write-Host "推送代码和 tag..." -ForegroundColor Cyan
+# 2. 推送
+Write-Host "2/5 推送代码和 tag..." -ForegroundColor Cyan
 git push --follow-tags
 if ($LASTEXITCODE -ne 0) {
-    Write-Host "失败: 推送出错，请检查网络连接" -ForegroundColor Red
+    Write-Host "失败: 推送出错" -ForegroundColor Red
     exit 1
 }
 
-# 发布前清理旧 Release
+# 3. 构建（不发布）
+Write-Host "3/5 构建应用..." -ForegroundColor Cyan
+npm run build
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "失败: 构建出错" -ForegroundColor Red
+    exit 1
+}
+
+# 4. 清理旧 Release 并创建新的
+Write-Host "4/5 创建 GitHub Release..." -ForegroundColor Cyan
 Cleanup-Release $Tag
 
-# 构建并发布（最多重试 3 次）
-$maxRetry = 3
-for ($i = 1; $i -le $maxRetry; $i++) {
-    Write-Host "构建并发布（第 $i 次）..." -ForegroundColor Cyan
-    npm run release
-    if ($LASTEXITCODE -eq 0) { break }
+# 创建 Release
+$body = @{
+    tag_name = $Tag
+    name = $NewVersion
+    body = "Release $NewVersion"
+    draft = $false
+    prerelease = $false
+} | ConvertTo-Json
 
-    if ($i -lt $maxRetry) {
-        Write-Host "发布失败，清理后重试..." -ForegroundColor Yellow
-        Cleanup-Release $Tag
-        # 重新创建 tag（因为 Release 删除后 tag 可能还在）
-        git tag -f $Tag
-        git push -f origin $Tag
-        Start-Sleep -Seconds 3
-    }
-}
+$release = Invoke-RestMethod -Uri "https://api.github.com/repos/$Owner/$Repo/releases" `
+    -Method Post -Headers $Headers -Body $body -ContentType "application/json"
+$releaseId = $release.id
+Write-Host "  Release 已创建 (ID: $releaseId)" -ForegroundColor Green
 
-if ($LASTEXITCODE -ne 0) {
-    Write-Host "失败: 发布出错，已重试 $maxRetry 次" -ForegroundColor Red
-    Cleanup-Release $Tag
-    exit 1
-}
+# 5. 上传文件
+Write-Host "5/5 上传文件..." -ForegroundColor Cyan
+$distDir = Join-Path $PSScriptRoot "dist"
+$allSuccess = $true
 
-# 验证发布结果
-Write-Host "验证发布结果..." -ForegroundColor Cyan
-Start-Sleep -Seconds 3
-try {
-    $release = Invoke-RestMethod -Uri "https://api.github.com/repos/$Owner/$Repo/releases/tags/$Tag" -Headers $Headers
-    $assets = $release.assets | ForEach-Object { $_.name }
-    $hasExe = $assets -contains "electron-app-$NewVersion-setup.exe"
-    $hasBlockmap = $assets -contains "electron-app-$NewVersion-setup.exe.blockmap"
-    $hasLatestYml = $assets -contains "latest.yml"
+$files = @(
+    @{ Path = Join-Path $distDir "electron-app-$NewVersion-setup.exe"; Name = "electron-app-$NewVersion-setup.exe" },
+    @{ Path = Join-Path $distDir "electron-app-$NewVersion-setup.exe.blockmap"; Name = "electron-app-$NewVersion-setup.exe.blockmap" },
+    @{ Path = Join-Path $distDir "latest.yml"; Name = "latest.yml" }
+)
 
-    if ($hasExe -and $hasBlockmap -and $hasLatestYml) {
-        Write-Host "发布成功！所有文件齐全：" -ForegroundColor Green
-        $assets | ForEach-Object { Write-Host "  - $_" -ForegroundColor Gray }
+foreach ($file in $files) {
+    if (Test-Path $file.Path) {
+        $ok = Upload-Asset $releaseId $file.Path $file.Name
+        if (-not $ok) { $allSuccess = $false }
     } else {
-        Write-Host "错误: 文件不完整！" -ForegroundColor Red
-        if (-not $hasExe) { Write-Host "  缺少: setup.exe" -ForegroundColor Red }
-        if (-not $hasBlockmap) { Write-Host "  缺少: setup.exe.blockmap" -ForegroundColor Red }
-        if (-not $hasLatestYml) { Write-Host "  缺少: latest.yml" -ForegroundColor Red }
-        Write-Host "正在清理不完整 Release..." -ForegroundColor Yellow
-        Cleanup-Release $Tag
-        exit 1
+        Write-Host "  文件不存在: $($file.Name)" -ForegroundColor Red
+        $allSuccess = $false
     }
-} catch {
-    Write-Host "警告: 无法验证发布结果，请手动检查 GitHub" -ForegroundColor Yellow
+}
+
+# 结果
+if ($allSuccess) {
+    Write-Host "`n发布成功！" -ForegroundColor Green
+    Write-Host "https://github.com/$Owner/$Repo/releases/tag/$Tag" -ForegroundColor Cyan
+} else {
+    Write-Host "`n发布完成但部分文件上传失败，请检查 GitHub Release" -ForegroundColor Yellow
+    Write-Host "https://github.com/$Owner/$Repo/releases/tag/$Tag" -ForegroundColor Cyan
+    exit 1
 }
