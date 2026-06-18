@@ -94,11 +94,18 @@ if ($LASTEXITCODE -ne 0) {
     exit 1
 }
 
-# 3. 构建（不发布）
+# 3. 构建并打包（不发布）
 Write-Host "3/5 构建应用..." -ForegroundColor Cyan
 npm run build
 if ($LASTEXITCODE -ne 0) {
     Write-Host "失败: 构建出错" -ForegroundColor Red
+    exit 1
+}
+
+Write-Host "  打包安装程序..." -ForegroundColor Cyan
+npx electron-builder --win
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "失败: 打包出错" -ForegroundColor Red
     exit 1
 }
 
