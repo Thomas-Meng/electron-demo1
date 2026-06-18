@@ -2,7 +2,7 @@
  * @Author: mengtong
  * @Date: 2026-06-11 10:14:13
  * @LastEditors: mengtong
- * @LastEditTime: 2026-06-18 01:30:55
+ * @LastEditTime: 2026-06-18 16:01:21
  * @Description: Electron 培训演示 - 主界面
  */
 
@@ -148,7 +148,7 @@ function App(): React.JSX.Element {
         <div className="header-left">
           <img src={electronLogo} alt="Electron" className="logo" />
           <div>
-            <h1>Electron 培训演示1.1.2</h1>
+            <h1>Electron 培训演示</h1>
             <p className="subtitle">React + TypeScript + Electron-Vite</p>
           </div>
         </div>
