@@ -17,7 +17,9 @@
       "Bash(git commit *)",
       "Bash(git remote *)",
       "Bash(git push *)",
-      "Bash(ping *)"
+      "Bash(ping *)",
+      "Read(//c/Users/86136/Desktop/electron培训/**)",
+      "Bash(dir \"C:\\\\Users\\\\86136\\\\Desktop\\\\electron培训\\\\\" /b 2>/dev/null)"
     ]
   }
 }
