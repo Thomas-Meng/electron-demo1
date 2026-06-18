@@ -5,11 +5,22 @@ param(
     [string]$Version = "patch"
 )
 
-# 检查 GH_TOKEN
+# 自动从 .env 读取 GH_TOKEN
 if (-not $env:GH_TOKEN) {
-    Write-Host "错误: 请先设置 GH_TOKEN" -ForegroundColor Red
-    Write-Host '  $env:GH_TOKEN="你的token"' -ForegroundColor Yellow
-    exit 1
+    $envFile = Join-Path $PSScriptRoot ".env"
+    if (Test-Path $envFile) {
+        $envContent = Get-Content $envFile
+        foreach ($line in $envContent) {
+            if ($line -match "^GH_TOKEN=(.+)$") {
+                $env:GH_TOKEN = $Matches[1].Trim()
+                break
+            }
+        }
+    }
+    if (-not $env:GH_TOKEN) {
+        Write-Host "错误: 请在 .env 文件中设置 GH_TOKEN" -ForegroundColor Red
+        exit 1
+    }
 }
 
 # 升版本号
