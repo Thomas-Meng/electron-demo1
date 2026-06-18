@@ -45,24 +45,29 @@ function Cleanup-Release($tag) {
     } catch {}
 }
 
-# 上传单个文件到 Release（带重试）
+# 上传单个文件到 Release（带重试，大文件用 curl）
 function Upload-Asset($releaseId, $filePath, $fileName) {
     $maxRetry = 3
     for ($i = 1; $i -le $maxRetry; $i++) {
         Write-Host "  上传 $fileName（第 $i 次）..." -ForegroundColor Gray
         try {
-            $result = Invoke-RestMethod -Uri "https://uploads.github.com/repos/$Owner/$Repo/releases/$releaseId/assets?name=$fileName" `
-                -Method Post `
-                -Headers @{"Authorization" = "token $env:GH_TOKEN"; "Content-Type" = "application/octet-stream"} `
-                -InFile $filePath
-            if ($result.name -eq $fileName) {
+            $result = curl.exe -s -X POST `
+                -H "Authorization: token $env:GH_TOKEN" `
+                -H "Content-Type: application/octet-stream" `
+                --data-binary "@$filePath" `
+                "https://uploads.github.com/repos/$Owner/$Repo/releases/$releaseId/assets?name=$fileName" `
+                --max-time 300
+            $json = $result | ConvertFrom-Json
+            if ($json.name -eq $fileName) {
                 Write-Host "  $fileName 上传成功" -ForegroundColor Green
                 return $true
+            } else {
+                Write-Host "  上传失败: $($json.message)" -ForegroundColor Red
             }
         } catch {
             Write-Host "  上传失败: $($_.Exception.Message)" -ForegroundColor Red
         }
-        if ($i -lt $maxRetry) { Start-Sleep -Seconds 3 }
+        if ($i -lt $maxRetry) { Start-Sleep -Seconds 5 }
     }
     return $false
 }
